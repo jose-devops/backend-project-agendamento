@@ -2,7 +2,9 @@ package com.api.app.services;
 
 import com.api.app.dtos.MoradorDTO;
 import com.api.app.dtos.MoradorResponseDTO;
-import com.api.app.models.*;
+import com.api.app.models.MoradorModel;
+import com.api.app.models.ProprietarioModel;
+import com.api.app.models.UsuarioModel;
 import com.api.app.models.enums.TipoAcesso;
 import com.api.app.repositories.*;
 import com.api.app.security.JwtUtil;
@@ -24,34 +26,21 @@ public class MoradorService {
     @Autowired
     private UsuarioRepository usuarioRepository;
     @Autowired
-    private ImovelRepository imovelRepository;
-    @Autowired
     private JwtUtil jwtUtil;
-
-    @Autowired
-    private ContratoRepository contratoRepository;
-
     @Autowired
     private AgendamentoRepository agendamentoRepository;
 
-
-
-
     public List<MoradorResponseDTO> listarMoradoresProprietario(UsuarioModel usuario) {
-        // Verificar se o usuário logado é um proprietário
         if (!usuario.getTipoAcesso().isProprietario()) {
             throw new RuntimeException("Apenas proprietários podem listar moradores.");
         }
 
-        // Buscar todos os moradores vinculados ao proprietário logado
         List<MoradorModel> moradores = moradorRepository.findByProprietarioId(usuario.getId());
 
-        // Converter para DTO
         return moradores.stream()
-                .map(morador -> converterModelParaResponseDTO(morador))
+                .map(this::converterModelParaResponseDTO)
                 .collect(Collectors.toList());
     }
-
 
     public MoradorResponseDTO listarMoradorLogado(String token) {
         String email = jwtUtil.extractUsername(token.replace("Bearer ", ""));
@@ -62,16 +51,11 @@ public class MoradorService {
             throw new RuntimeException("Apenas moradores podem acessar esse recurso.");
         }
 
-        // Garantir apenas 1 morador por usuário
         MoradorModel morador = moradorRepository.findByUsuario(usuario)
                 .orElseThrow(() -> new RuntimeException("Morador não encontrado para o usuário logado"));
 
         return converterModelParaResponseDTO(morador);
     }
-
-
-
-
 
     @Transactional
     public MoradorModel atualizar(Long id, MoradorDTO dto, UsuarioModel usuario) {
@@ -88,7 +72,6 @@ public class MoradorService {
             throw new RuntimeException("Você não tem permissão para editar este morador.");
         }
 
-        // Atualizar os campos do morador com os valores do DTO
         morador.setNome(dto.getNome());
         morador.setEmail(dto.getEmail());
         morador.setTelefonePrincipal(dto.getTelefonePrincipal());
@@ -101,50 +84,27 @@ public class MoradorService {
 
         if (morador.getUsuario() != null) {
             morador.getUsuario().setEmail(dto.getEmail());
-
             if (dto.getSenha() != null && !dto.getSenha().isBlank()) {
                 morador.getUsuario().setSenha(dto.getSenha());
-
-
             }
-
             usuarioRepository.save(morador.getUsuario());
         }
 
+        // Removido: atualização do imóvel
 
-        // Se o imóvel foi alterado, atualizar o imóvel do morador
-        if (dto.getImovelId() != null) {
-            ImovelModel imovel = imovelRepository.findById(dto.getImovelId())
-                    .orElseThrow(() -> new RuntimeException("Imóvel não encontrado"));
-            morador.setImovel(imovel);  // Vincula o morador a um novo imóvel
-        }
-
-        // Salvar as alterações no banco de dados
         return moradorRepository.save(morador);
     }
 
-
-
     public MoradorModel buscarPorId(Long id, UsuarioModel usuario) {
-        // Buscar o morador pelo ID
         MoradorModel morador = moradorRepository.findByIdAndAtivoTrue(id)
                 .orElseThrow(() -> new RuntimeException("Morador não encontrado"));
 
-        // Verificar se o morador pertence ao usuário
         if (!morador.getUsuario().getId().equals(usuario.getId())) {
             throw new RuntimeException("Você não tem permissão para visualizar este morador.");
         }
 
         return morador;
     }
-
-
-
-
-
-
-
-/* AJUSTAR PARA FUTURO ACESSO DE ADMINISTRADOR*/
 
     @Transactional
     public void deletarMoradorPorId(Long id, String token) {
@@ -159,36 +119,19 @@ public class MoradorService {
             throw new RuntimeException("Apenas proprietários podem excluir moradores");
         }
 
-        // Verificações de vínculo
-        boolean possuiContratos = contratoRepository.existsByMorador(morador);
+        // Removido: verificação de contratos
+
         boolean possuiAgendamentos = agendamentoRepository.existsByMorador(morador);
 
-        if (possuiContratos || possuiAgendamentos) {
-            StringBuilder mensagem = new StringBuilder("Não é possível excluir o morador. Motivo:");
-
-            if (possuiContratos) mensagem.append(" possui contratos vinculados");
-            if (possuiContratos && possuiAgendamentos) mensagem.append(" e");
-            if (possuiAgendamentos) mensagem.append(" possui agendamentos vinculados");
-
-            mensagem.append(". Remova os vínculos antes de prosseguir.");
-            throw new RuntimeException(mensagem.toString());
+        if (possuiAgendamentos) {
+            throw new RuntimeException("Não é possível excluir o morador pois possui agendamentos vinculados.");
         }
 
-        // Desvincular o morador de imóveis (campo nullable)
-        List<ImovelModel> imoveis = imovelRepository.findByMorador(morador);
-        for (ImovelModel imovel : imoveis) {
-            imovel.setMorador(null);
-            imovelRepository.save(imovel);
-        }
+        // Removido: desvincular imóveis
 
-        // Deletar morador e usuário associado
         moradorRepository.delete(morador);
         usuarioRepository.delete(morador.getUsuario());
     }
-
-
-
-
 
     public MoradorResponseDTO converterModelParaResponseDTO(MoradorModel model) {
         MoradorResponseDTO dto = new MoradorResponseDTO();
@@ -202,39 +145,16 @@ public class MoradorService {
         dto.setRendaMensal(model.getRendaMensal());
         dto.setObservacao(model.getObservacao());
 
-        // Adicionar o email do usuário (não o objeto completo)
         if (model.getUsuario() != null) {
             dto.setUsuarioEmail(model.getUsuario().getEmail());
         }
 
-        // Retornar apenas o ID do proprietário
         if (model.getProprietario() != null) {
             dto.setProprietarioId(model.getProprietario().getId());
         }
 
         return dto;
     }
-
-    private MoradorModel converterDTOparaModel(MoradorDTO dto) {
-        MoradorModel morador = new MoradorModel();
-        morador.setNome(dto.getNome());
-        morador.setCpf(dto.getCpf());
-        morador.setDataAniversario(dto.getDataAniversario());
-        morador.setTelefonePrincipal(dto.getTelefonePrincipal());
-        morador.setTelefoneSecundario(dto.getTelefoneSecundario());
-        morador.setProfissao(dto.getProfissao());
-        morador.setRendaMensal(dto.getRendaMensal());
-        morador.setObservacao(dto.getObservacao());
-
-        if (dto.getUsuarioId() != null) {
-            UsuarioModel usuario = usuarioRepository.findById(dto.getUsuarioId())
-                    .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
-            morador.setUsuario(usuario);
-        }
-
-        return morador;
-    }
-
 
     @Transactional
     public void cadastrarPorProprietario(MoradorDTO dto, String token) {
@@ -246,22 +166,17 @@ public class MoradorService {
             throw new RuntimeException("Apenas proprietários podem cadastrar moradores");
         }
 
-        // Criar usuário do morador
         UsuarioModel usuarioMorador = new UsuarioModel();
         usuarioMorador.setEmail(dto.getEmail());
-        usuarioMorador.setSenha(dto.getSenha()); // Use BCrypt depois
+        usuarioMorador.setSenha(dto.getSenha());
         usuarioMorador.setTipoAcesso(TipoAcesso.MORADOR);
         usuarioMorador.setAtivo(true);
         usuarioRepository.save(usuarioMorador);
 
-        // Obter o proprietário
         ProprietarioModel proprietario = proprietarioRepository.findByUsuario(usuarioProprietario)
                 .orElseThrow(() -> new RuntimeException("Proprietário não encontrado para este usuário"));
 
-        // Criar morador
         MoradorModel morador = new MoradorModel();
-
-
         morador.setNome(dto.getNome());
         morador.setCpf(dto.getCpf());
         morador.setDataAniversario(dto.getDataAniversario());
@@ -271,7 +186,6 @@ public class MoradorService {
         morador.setProfissao(dto.getProfissao());
         morador.setObservacao(dto.getObservacao());
 
-        // vinculos
         morador.setUsuario(usuarioMorador);
         morador.setProprietario(proprietario);
         morador.setEmail(usuarioMorador.getEmail());
@@ -309,13 +223,9 @@ public class MoradorService {
         morador.getUsuario().setAtivo(false);
     }
 
-
-
-
     @Transactional
     public void inativarProprioCadastro(String token) {
         String email = jwtUtil.extractUsername(token.replace("Bearer ", ""));
-
         UsuarioModel usuario = usuarioRepository.findByEmailAndAtivoTrue(email)
                 .orElseThrow(() -> new RuntimeException("Usuário não encontrado ou já inativo"));
 
@@ -328,6 +238,4 @@ public class MoradorService {
         moradorRepository.save(morador);
         usuarioRepository.save(usuario);
     }
-
-
 }

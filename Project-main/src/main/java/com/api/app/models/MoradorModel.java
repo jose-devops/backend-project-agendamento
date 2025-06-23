@@ -22,12 +22,9 @@ public class MoradorModel {
     private String nome;
     private String email;
     private String cpf;
-
     private LocalDate dataAniversario;
-
     private String telefonePrincipal;
     private String telefoneSecundario;
-
     private String profissao;
 
     @Column(precision = 10, scale = 2)
@@ -36,17 +33,15 @@ public class MoradorModel {
     @Column(columnDefinition = "TEXT")
     private String observacao;
 
+    // Relacionamentos simulados com stubs para evitar erro
+
     @JsonIgnore
     @OneToOne
     @JoinColumn(name = "usuario_id")
-    private UsuarioModel usuario;
+    private UsuarioModel usuario; // Pode ser substituído por Object ou removido se ainda não existir
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "proprietario_id")
-    @JsonIgnore
-    private ProprietarioModel proprietario;
-
-    @ManyToOne
-    @JoinColumn(name = "imovel_id")
-    private ImovelModel imovel;
+    private ProprietarioModel proprietario; // Pode ser substituído por Object ou removido se necessário
 }
